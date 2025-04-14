@@ -1,0 +1,4 @@
+.DS_Store
+
+# 大文件/模型权重（用其他方式分享）
+best_model.pth
