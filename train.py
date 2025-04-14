@@ -299,20 +299,11 @@ def split_dataset(dataset, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15, see
     print(f"Validation set: {len(val_dataset)} ({val_ratio*100:.1f}%)")
     print(f"Test set: {len(test_dataset)} ({test_ratio*100:.1f}%)")
     
-    # Check data distribution
-    print("\nData distribution check:")
-    check_distribution(dataset, train_dataset, "Training set")
-    check_distribution(dataset, val_dataset, "Validation set")
-    check_distribution(dataset, test_dataset, "Test set")
-    
     return train_dataset, val_dataset, test_dataset
 
 def check_distribution(full_dataset, subset, name):
     """Check distribution of data subset"""
-    # Get subset indices
     indices = subset.indices
-    
-    # Count positive sample ratio
     total_ones = 0
     total_samples = 0
     
@@ -321,8 +312,7 @@ def check_distribution(full_dataset, subset, name):
         total_ones += sum(labels)
         total_samples += len(labels)
     
-    pos_ratio = total_ones / total_samples if total_samples > 0 else 0
-    print(f"{name} positive sample ratio: {pos_ratio:.4f}")
+    return total_ones / total_samples if total_samples > 0 else 0
 
 class CustomLoss(nn.Module):
     def __init__(self, zero_mistake_weight=2.5):
@@ -541,7 +531,7 @@ def main():
     
     # Define optimizer and loss function
     optimizer = Adam(model.parameters(), lr=0.0001, weight_decay=0.01)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True, min_lr=1e-6)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, min_lr=1e-6)
     criterion = CustomLoss(zero_mistake_weight=2.0).to(device)
     
     # Train model
