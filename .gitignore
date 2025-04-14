@@ -1,4 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# 系统文件
 .DS_Store
+Thumbs.db
+
+# 开发环境
+.idea/
+.vscode/
 
 # 大文件/模型权重（用其他方式分享）
 best_model.pth
