@@ -22,6 +22,9 @@ class SyriacDataset(Dataset):
         current_sentence = []
         current_labels = []
         
+        # Store original sentences for length statistics
+        original_sentences = []
+        
         def split_sentence(sentence, labels):
             """Intelligently split sentence, preferably at spaces"""
             if len(sentence) <= self.max_length:
@@ -56,6 +59,8 @@ class SyriacDataset(Dataset):
         for _, row in self.data.iterrows():
             if pd.isna(row['input']) or (row['input'] == ' ' and len(current_sentence) > 0 and current_sentence[-1] == ' '):
                 if current_sentence:
+                    # Store original sentence before splitting
+                    original_sentences.append(''.join(current_sentence))
                     # Use intelligent split function to process current sentence
                     segments = split_sentence(current_sentence, current_labels)
                     self.sentences.extend(segments)
@@ -73,14 +78,24 @@ class SyriacDataset(Dataset):
         
         if current_sentence:
             # Process last sentence
+            original_sentences.append(''.join(current_sentence))
             segments = split_sentence(current_sentence, current_labels)
             self.sentences.extend(segments)
         
-        print(f"Total sentences found: {len(self.sentences)}")
+        print(f"Total sentences found: {len(original_sentences)}")
         
-        # Count sequence lengths
+        # Count original sentence lengths
+        original_lengths = [len(s) for s in original_sentences]
+        print(f"\nOriginal sentence length statistics:")
+        print(f"Min length: {min(original_lengths)}")
+        print(f"Max length: {max(original_lengths)}")
+        print(f"Mean length: {np.mean(original_lengths):.2f}")
+        print(f"Median length: {np.median(original_lengths):.2f}")
+        print(f"95th percentile: {np.percentile(original_lengths, 95):.2f}")
+        
+        # Count sequence lengths (after splitting)
         lengths = [len(sentence) for sentence, _ in self.sentences]
-        print(f"\nSequence length statistics:")
+        print(f"\nSequence length statistics (after splitting):")
         print(f"Min length: {min(lengths)}")
         print(f"Max length: {max(lengths)}")
         print(f"Mean length: {np.mean(lengths):.2f}")

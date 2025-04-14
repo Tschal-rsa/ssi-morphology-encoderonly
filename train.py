@@ -537,6 +537,10 @@ def main():
     # Train model
     train_model(model, train_loader, val_loader, optimizer, scheduler, criterion, device)
     
+    # Load best model for testing
+    print("\nLoading best model for testing...")
+    model.load_state_dict(torch.load('best_model.pth'))
+    
     # Evaluate model on test set
     print("\nStarting model evaluation on test set...")
     evaluate_model(model, test_loader, criterion, device)
