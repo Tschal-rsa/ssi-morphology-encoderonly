@@ -4,6 +4,7 @@ from model import TransformerClassifier
 from dataset import SyriacDataset
 import re
 import pandas as pd
+import os
 
 # Load model
 def load_model(model_path, device):
@@ -116,13 +117,43 @@ def split_sentence(sentence, max_length=50):
     
     return segments if segments else [sentence + '  ']  # Ensure we return at least one segment
 
-def main(input_sentence=None):
+def process_file(input_file, model, patterns_df, char_to_idx, output_file):
+    """Process input file chapter by chapter and write results to output file"""
+    with open(input_file, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    
+    with open(output_file, 'w', encoding='utf-8') as f:
+        for line in lines:
+            parts = line.strip().split('\t')
+            if len(parts) < 4:
+                continue
+                
+            book, chapter, verse, text = parts
+            
+            # Process the text
+            input_tensor = text_to_tensor(text, char_to_idx)
+            input_tensor = input_tensor.to(next(model.parameters()).device)
+            
+            with torch.no_grad():
+                output = model(input_tensor)
+                predictions = torch.argmax(output, dim=-1)
+            
+            # Convert predictions to symbol form
+            pred_symbols = [label_to_symbol(p.item(), patterns_df) for p in predictions[0]]
+            
+            # Create aligned output
+            pred_line = format_aligned_output(text, pred_symbols)
+            
+            # Write with exact same format as input
+            f.write(f"{book}\t{chapter}\t{verse}\t{pred_line}\n")
+
+def main(input_sentence=None, model_path='best_model.pth', input_file='isaiah_transcription.txt', output_file=None):
     # Set device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
     # Load model
-    model = load_model('best_model.pth', device)
+    model = load_model(model_path, device)
     
     # Load patterns
     patterns_df = load_patterns('patterns.csv')
@@ -135,59 +166,35 @@ def main(input_sentence=None):
         'C': 20, 'T': 21, ' ': 22
     }
     
-    if input_sentence is None:
-        # Load text
-        sentences = load_sentences('isaiah_transcription.txt')
+    if input_sentence is not None:
+        # Process single input sentence
+        input_tensor = text_to_tensor(input_sentence, char_to_idx)
+        input_tensor = input_tensor.to(device)
         
-        # Filter out chapter markers, only select actual text lines
-        text_sentences = [s for s in sentences if not s[0].startswith('Chapter')]
-        if not text_sentences:
-            print("No valid sentences found!")
-            return
+        with torch.no_grad():
+            output = model(input_tensor)
+            predictions = torch.argmax(output, dim=-1)
         
-        # Randomly select a sentence
-        random_sentence, line_number = random.choice(text_sentences)
-        sentence_to_process = random_sentence
-        print(f"\nSelected text (Line {line_number}):")
+        pred_symbols = [label_to_symbol(p.item(), patterns_df) for p in predictions[0]]
+        pred_line = format_aligned_output(input_sentence, pred_symbols)
+        print(f"Pred:  {pred_line}")
     else:
-        sentence_to_process = input_sentence
-        line_number = None
-        print(f"\nInput text: {sentence_to_process}")
+        # Process input file
+        if output_file is None:
+            # Generate output filename by adding "_output" before the extension
+            base, ext = os.path.splitext(input_file)
+            output_file = f"{base}_output{ext}"
         
-        # Process the entire input sentence directly, without segmentation
-        sentence_segments = [sentence_to_process]
-    
-    # Use the same segmentation logic as in training (if not direct input)
-    if input_sentence is None:
-        sentence_segments = split_sentence(sentence_to_process)
-        segment = random.choice(sentence_segments)
-        print(f"Processing segment: {segment}")
-    else:
-        segment = sentence_to_process
-        print(f"Processing input: {segment}")
-    
-    # Convert to model input
-    input_tensor = text_to_tensor(segment, char_to_idx)
-    input_tensor = input_tensor.to(device)
-    
-    # Make prediction
-    with torch.no_grad():
-        output = model(input_tensor)
-        predictions = torch.argmax(output, dim=-1)
-    
-    # Convert predictions to symbol form
-    pred_symbols = [label_to_symbol(p.item(), patterns_df) for p in predictions[0]]
-    
-    # Create aligned output
-    pred_line = format_aligned_output(segment, pred_symbols)
-    print(f"Pred:  {pred_line}")
+        print(f"Processing {input_file} and writing results to {output_file}")
+        process_file(input_file, model, patterns_df, char_to_idx, output_file)
+        print(f"Processing complete. Results written to {output_file}")
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description='Run best model prediction')
+    parser = argparse.ArgumentParser(description='Run model prediction')
     parser.add_argument('--input', type=str, help='Input sentence to predict')
+    parser.add_argument('--model', type=str, default='best_model.pth', help='Path to the model file (.pth)')
+    parser.add_argument('--file', type=str, default='isaiah_transcription.txt', help='Path to the input text file')
+    parser.add_argument('--output', type=str, help='Path to the output file (default: input_file_parsed.txt)')
     args = parser.parse_args()
-    main(args.input)
-
-if __name__ == "__main__":
-    main()
+    main(args.input, args.model, args.file, args.output)

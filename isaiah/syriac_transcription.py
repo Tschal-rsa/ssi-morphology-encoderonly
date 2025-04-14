@@ -74,15 +74,56 @@ def process_file(input_file, output_file):
         with open(input_file, 'r', encoding='utf-8') as f:
             text = f.read()
         
-        # Replace all newlines with spaces
-        text = text.replace('\n', ' ')
+        # Split the text into lines and process each line
+        lines = text.split('\n')
+        processed_lines = []
+        current_chapter = None
+        current_verse = None
+        current_content = []
         
-        # Convert the text
-        transcription = convert_to_syriac(text)
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Check if this is a chapter line
+            if line.startswith('Chapter'):
+                # If we have accumulated content, process it before changing chapter
+                if current_content and current_chapter and current_verse:
+                    content = ' '.join(current_content)
+                    transcription = convert_to_syriac(content)
+                    processed_lines.append(f"Is\t{current_chapter}\t{current_verse}\t{transcription}")
+                    current_content = []
+                current_chapter = line.split()[1]
+                continue
+                
+            # Check if this is a verse line
+            if line[0].isdigit():
+                # If we have accumulated content, process it before changing verse
+                if current_content and current_chapter and current_verse:
+                    content = ' '.join(current_content)
+                    transcription = convert_to_syriac(content)
+                    processed_lines.append(f"Is\t{current_chapter}\t{current_verse}\t{transcription}")
+                    current_content = []
+                
+                parts = line.split(maxsplit=1)
+                if len(parts) >= 2:
+                    current_verse = parts[0]
+                    current_content = [parts[1]]
+            else:
+                # This is a continuation of the current verse
+                if current_verse:
+                    current_content.append(line)
+        
+        # Process any remaining content
+        if current_content and current_chapter and current_verse:
+            content = ' '.join(current_content)
+            transcription = convert_to_syriac(content)
+            processed_lines.append(f"Is\t{current_chapter}\t{current_verse}\t{transcription}")
         
         # Write the result to output file
         with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(transcription)
+            f.write('\n'.join(processed_lines))
             
         print(f"Successfully processed {input_file} and wrote transcription to {output_file}")
         
