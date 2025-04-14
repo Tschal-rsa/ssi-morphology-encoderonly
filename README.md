@@ -5,18 +5,20 @@ This project implements a transformer-based encoder-only model for morphological
 ## Model Architecture
 
 ### Base Architecture
-- **Model Type**: Transformer Encoder
+- **Model Type**: Transformer Encoder with Character-level CNN
 - **Input Processing**: Character-level tokenization
 - **Output**: Sequence of morphological pattern labels
 - **Number of Classes**: 129 (including empty pattern)
+- **Maximum Sequence Length**: 128
 
 ### Model Parameters
-- **Encoder Layers**: 6
+- **Encoder Layers**: 8
 - **Attention Heads**: 8
-- **Hidden Dimension**: 512
-- **Feedforward Dimension**: 2048
+- **Hidden Dimension (d_model)**: 512
+- **Feedforward Dimension**: 2048 (d_model * 4)
 - **Dropout Rate**: 0.1
-- **Positional Encoding**: Learned positional embeddings
+- **Positional Encoding**: Sinusoidal positional embeddings
+- **Character CNN**: Two 1D convolutional layers with kernel size 3 and padding 1
 
 ### Character Mapping
 ```python
@@ -40,14 +42,16 @@ The `train.py` script handles the complete training process of the model, includ
 ### Training Process
 1. **Data Preparation**
    - Loads training data from specified files
-   - Splits data into training (80%) and validation (20%) sets
+   - Splits data into training (70%), validation (15%), and test (15%) sets
    - Applies character-level tokenization
+   - Intelligently splits long sentences at spaces to maintain context
 
 2. **Training Loop**
-   - Uses cross-entropy loss
-   - Implements Adam optimizer with learning rate scheduling
+   - Uses custom weighted cross-entropy loss (higher penalty for zero-label mistakes)
+   - Implements Adam optimizer with ReduceLROnPlateau scheduler
    - Applies gradient clipping (max norm: 1.0)
    - Implements early stopping based on validation loss
+   - Uses random seed based on epoch number for validation sampling
 
 3. **Performance Metrics**
    - Zero/Non-zero ratio
@@ -56,6 +60,8 @@ The `train.py` script handles the complete training process of the model, includ
    - Non-zero Exact Match accuracy
    - Overall accuracy
    - Training and validation loss
+   - Levenshtein distance for predictions
+   - Per-sequence metrics logged in MSS.txt
 
 ### Usage
 Basic training:
@@ -142,18 +148,23 @@ Each line contains:
 - numpy
 - tqdm (for training progress bars)
 - sklearn (for metrics calculation)
+- Levenshtein (for distance calculation)
 
 ## File Structure
-- `train.py`: Training script
+- `train.py`: Training script with dataset splitting and custom loss
 - `parse.py`: Prediction script
-- `model.py`: Transformer model implementation
-- `dataset.py`: Dataset handling and preprocessing
+- `model.py`: Transformer model implementation with character-level CNN
+- `dataset.py`: Dataset handling and preprocessing with intelligent sentence splitting
 - `patterns.csv`: Mapping of pattern labels to symbols
 - `best_model.pth`: Default trained model weights
+- `MSS.txt`: Training and testing metrics log
 
 ## Notes
 - The model processes text character by character
 - Each character in the output is followed by its predicted morphological pattern
-- Training uses a validation split of 20% of the data
+- Training uses a 70/15/15 split for train/validation/test
 - The model implements gradient clipping to prevent exploding gradients
-- Early stopping is implemented to prevent overfitting 
+- Custom loss function with higher penalty for zero-label mistakes
+- Results and metrics are logged in MSS.txt
+- Long sentences are intelligently split at spaces to maintain context
+- Character-level CNN helps capture local patterns before transformer processing 
