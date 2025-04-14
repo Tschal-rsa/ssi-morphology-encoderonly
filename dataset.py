@@ -8,7 +8,7 @@ class SyriacDataset(Dataset):
         self.data = pd.read_csv(csv_file)
         self.max_length = max_length
         
-        # 创建字符到索引的映射
+        # Create character to index mapping
         self.char_to_idx = {
             '>': 0, 'B': 1, 'G': 2, 'D': 3, 'H': 4, 'W': 5, 'Z': 6,
             'X': 7, 'V': 8, 'J': 9, 'K': 10, 'L': 11, 'M': 12, 'N': 13,
@@ -17,13 +17,13 @@ class SyriacDataset(Dataset):
         }
         self.idx_to_char = {v: k for k, v in self.char_to_idx.items()}
         
-        # 处理数据，按句子分组
+        # Process data, group by sentences
         self.sentences = []
         current_sentence = []
         current_labels = []
         
         def split_sentence(sentence, labels):
-            """智能分割句子，尽量在空格处分割"""
+            """Intelligently split sentence, preferably at spaces"""
             if len(sentence) <= self.max_length:
                 return [(sentence, labels)]
             
@@ -31,18 +31,18 @@ class SyriacDataset(Dataset):
             start = 0
             
             while start < len(sentence):
-                # 找到下一个分割点（在max_length范围内的最后一个空格）
+                # Find next split point (last space within max_length)
                 end = min(start + self.max_length, len(sentence))
                 if end < len(sentence):
-                    # 在max_length范围内从后向前找最后一个空格
+                    # Look for last space from end backwards within max_length
                     for i in range(end, start, -1):
                         if sentence[i] == ' ' and sentence[i-1] == ' ':
                             end = i
                             break
                 
-                # 如果找不到合适的空格，就强制在max_length处分割
+                # If no suitable space found, force split at max_length
                 if end == start + self.max_length:
-                    # 向前找最近的单个空格
+                    # Look for nearest single space
                     for i in range(end, start, -1):
                         if sentence[i] == ' ':
                             end = i
@@ -56,29 +56,29 @@ class SyriacDataset(Dataset):
         for _, row in self.data.iterrows():
             if pd.isna(row['input']) or (row['input'] == ' ' and len(current_sentence) > 0 and current_sentence[-1] == ' '):
                 if current_sentence:
-                    # 使用智能分割函数处理当前句子
+                    # Use intelligent split function to process current sentence
                     segments = split_sentence(current_sentence, current_labels)
                     self.sentences.extend(segments)
                     current_sentence = []
                     current_labels = []
             else:
                 current_sentence.append(row['input'])
-                # 修改标签处理逻辑
+                # Modify label processing logic
                 output_value = row['output']
                 if isinstance(output_value, str):
-                    # 如果输出包含多个值，取第一个值
+                    # If output contains multiple values, take the first one
                     output_value = output_value.split(',')[0]
-                output_value = int(output_value)  # 将字符串转换为整数
-                current_labels.append(output_value)  # 直接使用原始值，不做限制
+                output_value = int(output_value)  # Convert string to integer
+                current_labels.append(output_value)  # Use raw value directly, no restrictions
         
         if current_sentence:
-            # 处理最后一个句子
+            # Process last sentence
             segments = split_sentence(current_sentence, current_labels)
             self.sentences.extend(segments)
         
         print(f"Total sentences found: {len(self.sentences)}")
         
-        # 统计序列长度
+        # Count sequence lengths
         lengths = [len(sentence) for sentence, _ in self.sentences]
         print(f"\nSequence length statistics:")
         print(f"Min length: {min(lengths)}")
@@ -97,16 +97,16 @@ class SyriacDataset(Dataset):
     def __getitem__(self, idx):
         sentence, labels = self.sentences[idx]
         
-        # 将字符转换为索引
+        # Convert characters to indices
         sentence_indices = [self.char_to_idx[char] for char in sentence]
         
-        # 添加padding，但只到实际需要的长度
+        # Add padding, but only up to the actual needed length
         if len(sentence_indices) < self.max_length:
             sentence_indices.extend([self.char_to_idx[' ']] * (self.max_length - len(sentence_indices)))
         else:
             sentence_indices = sentence_indices[:self.max_length]
         
-        # 确保标签长度与句子长度匹配
+        # Ensure label length matches sentence length
         if len(labels) < self.max_length:
             labels.extend([0] * (self.max_length - len(labels)))
         else:

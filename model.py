@@ -7,7 +7,7 @@ class PositionalEncoding(nn.Module):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 
-        # 创建位置编码矩阵
+        # Create positional encoding matrix
         position = torch.arange(max_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
         pe = torch.zeros(max_len, 1, d_model)
@@ -29,7 +29,7 @@ class TransformerClassifier(nn.Module):
         self.embedding = nn.Embedding(vocab_size, d_model)
         self.pos_encoder = PositionalEncoding(d_model)
         
-        # 添加字符级CNN
+        # Add character-level CNN
         self.char_conv = nn.Sequential(
             nn.Conv1d(d_model, d_model, kernel_size=3, padding=1),
             nn.BatchNorm1d(d_model),
@@ -39,7 +39,7 @@ class TransformerClassifier(nn.Module):
             nn.ReLU()
         )
         
-        # Transformer编码器
+        # Transformer encoder
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
@@ -49,7 +49,7 @@ class TransformerClassifier(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         
-        # 双向LSTM层
+        # Bidirectional LSTM layer
         self.lstm = nn.LSTM(
             d_model, d_model // 2, 
             num_layers=2, 
@@ -57,7 +57,7 @@ class TransformerClassifier(nn.Module):
             batch_first=True
         )
         
-        # 分类头
+        # Classification head
         self.classifier = nn.Sequential(
             nn.Linear(d_model, d_model),
             nn.LayerNorm(d_model),
@@ -75,20 +75,20 @@ class TransformerClassifier(nn.Module):
         x = self.embedding(x)  # (batch_size, seq_len, d_model)
         x = self.pos_encoder(x)
         
-        # CNN处理
+        # CNN processing
         x_conv = x.transpose(1, 2)  # (batch_size, d_model, seq_len)
         x_conv = self.char_conv(x_conv)
         x = x_conv.transpose(1, 2)  # (batch_size, seq_len, d_model)
         
-        # Transformer处理
+        # Transformer processing
         if attention_mask is not None:
             x = self.transformer(x, src_key_padding_mask=~attention_mask)
         else:
             x = self.transformer(x)
         
-        # LSTM处理
-        x, _ = self.lstm(x)  # 现在x的形状是 (batch_size, seq_len, d_model)
+        # LSTM processing
+        x, _ = self.lstm(x)  # Now x shape is (batch_size, seq_len, d_model)
         
-        # 分类
+        # Classification
         x = self.classifier(x)  # (batch_size, seq_len, num_classes)
-        return x  # 返回完整的序列预测结果 
+        return x  # Return complete sequence prediction results 
