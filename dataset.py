@@ -56,6 +56,7 @@ class SyriacDataset(Dataset):
             
             return segments
         
+        # TODO: iterrows() inefficient?
         for _, row in self.data.iterrows():
             if pd.isna(row['input']) or (row['input'] == ' ' and len(current_sentence) > 0 and current_sentence[-1] == ' '):
                 if current_sentence:
@@ -106,28 +107,40 @@ class SyriacDataset(Dataset):
             print(f"\nSample sentence: {''.join(self.sentences[0][0])}")
             print(f"Sample labels: {self.sentences[0][1]}")
     
+    @property
+    def input_pad_index(self) -> int:
+        return len(self.char_to_idx)
+    
+    @property
+    def label_pad_index(self) -> int:
+        # HACK: default ignore index of nn.CrossEntropyLoss
+        return -100
+    
     def __len__(self):
         return len(self.sentences)
     
     def __getitem__(self, idx):
         sentence, labels = self.sentences[idx]
+        mask = torch.ones((self.max_length,), dtype=torch.bool)
         
         # Convert characters to indices
         sentence_indices = [self.char_to_idx[char] for char in sentence]
         
         # Add padding, but only up to the actual needed length
         if len(sentence_indices) < self.max_length:
-            sentence_indices.extend([self.char_to_idx[' ']] * (self.max_length - len(sentence_indices)))
+            sentence_indices.extend([self.input_pad_index] * (self.max_length - len(sentence_indices)))
+            mask[len(sentence_indices):] = False
         else:
             sentence_indices = sentence_indices[:self.max_length]
         
         # Ensure label length matches sentence length
         if len(labels) < self.max_length:
-            labels.extend([0] * (self.max_length - len(labels)))
+            labels.extend([self.label_pad_index] * (self.max_length - len(labels)))
         else:
             labels = labels[:self.max_length]
         
         return {
             'input_ids': torch.tensor(sentence_indices, dtype=torch.long),
-            'labels': torch.tensor(labels, dtype=torch.long)
+            'labels': torch.tensor(labels, dtype=torch.long),
+            'mask': mask,
         } 

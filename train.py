@@ -16,7 +16,7 @@ from model import TransformerClassifier
 
 def decode_sequence(indices, dataset):
     """Decode index sequence to Syriac characters"""
-    return ''.join([dataset.idx_to_char[idx.item()] for idx in indices])
+    return ''.join([dataset.idx_to_char[idx.item()] for idx in indices if idx.item() != dataset.input_pad_index])
 
 def get_device():
     """Get available device"""
@@ -26,36 +26,6 @@ def get_device():
         return torch.device('mps')
     else:
         return torch.device('cpu')
-
-def calculate_pos_weight(dataset):
-    """Calculate class weights"""
-    # First count all occurring classes
-    class_counts = {}
-    total_samples = 0
-    
-    for _, labels in dataset.sentences:
-        for label in labels:
-            class_counts[label] = class_counts.get(label, 0) + 1
-            total_samples += 1
-    
-    # Get maximum class number
-    max_class = max(class_counts.keys())
-    
-    # Calculate weights (using inverse of class frequency)
-    weights = torch.zeros(max_class + 1)
-    for i in range(max_class + 1):
-        if i in class_counts:
-            weights[i] = total_samples / (len(class_counts) * class_counts[i])
-        else:
-            weights[i] = 1.0
-    
-    return weights
-
-def calculate_levenshtein_distance(predictions, labels, patterns_df):
-    """Calculate Levenshtein distance between prediction and label sequences"""
-    pred_symbols = [label_to_symbol(p.item(), patterns_df) for p in predictions]
-    label_symbols = [label_to_symbol(l.item(), patterns_df) for l in labels]
-    return Levenshtein.distance(''.join(pred_symbols), ''.join(label_symbols))
 
 def train_model(model, train_loader, val_loader, optimizer, scheduler, criterion, device, num_epochs=50):
     best_val_loss = float('inf')
@@ -88,14 +58,16 @@ def train_model(model, train_loader, val_loader, optimizer, scheduler, criterion
         for batch_idx, batch in enumerate(tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}')):
             input_ids = batch['input_ids'].to(device)
             labels = batch['labels'].long().to(device)
+            mask = batch['mask'].to(device)
             
             optimizer.zero_grad()
-            outputs = model(input_ids)
+            outputs = model(input_ids, mask)
             
             batch_size, seq_len, num_classes = outputs.size()
             outputs = outputs.view(-1, num_classes)
             labels = labels.view(-1)
             
+            # TODO: padding? loss mask?
             loss = criterion(outputs, labels)
             loss.backward()
             
@@ -121,7 +93,7 @@ def train_model(model, train_loader, val_loader, optimizer, scheduler, criterion
             # Non-zero exact match accuracy
             train_nonzero_exact += ((predictions == labels) & nonzero_mask).sum().item()
             
-            train_total += labels.numel()
+            train_total += (zero_mask | nonzero_mask).sum().item()
         
         train_loss = train_loss / len(train_loader)
         train_zero_acc = train_zero_correct / train_zero_total if train_zero_total > 0 else 0
@@ -150,13 +122,15 @@ def train_model(model, train_loader, val_loader, optimizer, scheduler, criterion
             for batch_idx, batch in enumerate(val_loader):
                 input_ids = batch['input_ids'].to(device)
                 labels = batch['labels'].long().to(device)
+                mask = batch['mask'].to(device)
                 
-                outputs = model(input_ids)
+                outputs = model(input_ids, mask)
                 
                 batch_size, seq_len, num_classes = outputs.size()
                 outputs = outputs.view(-1, num_classes)
                 labels = labels.view(-1)
                 
+                # TODO: padding? loss mask?
                 loss = criterion(outputs, labels)
                 
                 val_loss += loss.item()
@@ -177,7 +151,7 @@ def train_model(model, train_loader, val_loader, optimizer, scheduler, criterion
                 # Non-zero exact match accuracy
                 val_nonzero_exact += ((predictions == labels) & nonzero_mask).sum().item()
                 
-                val_total += labels.numel()
+                val_total += (zero_mask | nonzero_mask).sum().item()
                 
                 # Show only one random validation sample
                 if batch_idx == 0:
@@ -309,19 +283,6 @@ def split_dataset(dataset, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15, see
     
     return train_dataset, val_dataset, test_dataset
 
-def check_distribution(full_dataset, subset, name):
-    """Check distribution of data subset"""
-    indices = subset.indices
-    total_ones = 0
-    total_samples = 0
-    
-    for idx in indices:
-        _, labels = full_dataset.sentences[idx]
-        total_ones += sum(labels)
-        total_samples += len(labels)
-    
-    return total_ones / total_samples if total_samples > 0 else 0
-
 class CustomLoss(nn.Module):
     def __init__(self, zero_mistake_weight=2.5):
         super().__init__()
@@ -344,9 +305,9 @@ class CustomLoss(nn.Module):
         weighted_loss = (base_loss * weights).mean()
         return weighted_loss
 
-def label_to_symbol(label, patterns_df):
+def label_to_symbol(label, patterns_df, label_pad_index=-100):
     """Convert numeric label to corresponding symbol form"""
-    if label == 0:
+    if label == 0 or label == label_pad_index:
         return ''
     try:
         symbol = patterns_df[patterns_df['编号'] == label]['符号形式'].values[0]
@@ -356,12 +317,6 @@ def label_to_symbol(label, patterns_df):
 
 def format_aligned_output(input_text, label_symbols, pred_symbols):
     """Align input text and annotations for display"""
-    # Ensure input text and annotations have same length
-    min_len = min(len(input_text), len(label_symbols), len(pred_symbols))
-    input_text = input_text[:min_len]
-    label_symbols = label_symbols[:min_len]
-    pred_symbols = pred_symbols[:min_len]
-    
     # Create aligned output
     label_line = ''.join([f"{char}{label}" for char, label in zip(input_text, label_symbols)])
     pred_line = ''.join([f"{char}{pred}" for char, pred in zip(input_text, pred_symbols)])
@@ -391,8 +346,9 @@ def evaluate_model(model, test_loader, criterion, device):
         for batch_idx, batch in enumerate(tqdm(test_loader, desc='Testing')):
             input_ids = batch['input_ids'].to(device)
             labels = batch['labels'].long().to(device)
+            mask = batch['mask'].to(device)
             
-            outputs = model(input_ids)
+            outputs = model(input_ids, mask)
             
             batch_size, seq_len, num_classes = outputs.size()
             outputs = outputs.view(-1, num_classes)
@@ -432,7 +388,7 @@ def evaluate_model(model, test_loader, criterion, device):
                 # Calculate Levenshtein distance
                 test_levenshtein_distance += Levenshtein.distance(''.join(pred_symbols), ''.join(label_symbols))
             
-            test_total += labels.numel()
+            test_total += (zero_mask | nonzero_mask).sum().item()
             
             # Show one test sample
             if batch_idx == 0:
@@ -499,6 +455,9 @@ def main():
         print("Error: Dataset is empty!")
         return
     
+    vocab_size = len(dataset.char_to_idx) + 1
+    print(f"Vocabulary size: {vocab_size}")
+    
     # Count all occurring classes
     all_labels = set()
     for _, labels in dataset.sentences:
@@ -544,11 +503,8 @@ def main():
         num_workers=4
     )
     
-    # Calculate class weights
-    class_weights = calculate_pos_weight(dataset)
-    
     # Create model
-    model = TransformerClassifier(num_classes=num_classes).to(device)
+    model = TransformerClassifier(vocab_size=vocab_size, num_classes=num_classes).to(device)
     print(f"\nNumber of model parameters: {sum(p.numel() for p in model.parameters())}")
     
     # Define optimizer and loss function

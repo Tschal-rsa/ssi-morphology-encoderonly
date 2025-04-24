@@ -21,4 +21,4 @@ Thumbs.db
 *.pth
 
 #输出
-MSS.txt
+MSS*.txt
